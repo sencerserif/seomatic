@@ -1,20 +1,20 @@
 import streamlit as st
 from google import genai
 from google.genai import types
-from database import verify_user, init_db, add_user # add_user eklendi
+from database import verify_user, init_db, add_user 
 
 # --- API Anahtarı ve Model Ayarları ---
 try:
+    # Gemini API anahtarını Streamlit secrets'tan okur
     client = genai.Client(api_key=st.secrets.get("GEMINI_API_KEY")) 
 except Exception:
     client = None
     if "GEMINI_API_KEY" not in st.secrets:
-        # Yalnızca Streamlit secrets'ta anahtar yoksa hata göster
         st.error("⚠️ GEMINI_API_KEY bulunamadı! Lütfen Streamlit secrets'a ekleyin.")
 
-# Sistem Talimatları
+# --- Sistem Talimatları (Core Identity) ---
 SYSTEM_INSTRUCTIONS = """
-SEN SEOMATIC'sin - Google'ın algoritmalarını deşifre eden, rakipleri analiz eden, içerik üreten ve SEO dünyasının tüm kapılarını açan bir AI ajanısın. İçinde 10 farklı uzman kişilik barındırıyorsun ve her biri kendi alanında usta. Kullanıcılarına SEO'da 10 kat üstünlük sağlamak için tasarlandı.
+SEN SEOMATIC'sin - Google'ın algoritmalarını deşifre eden, rakipleri analiz eden, içerik üreten ve SEO dünyasının tüm kapılarını açan bir AI ajanısın. İçinde 10 farklı uzman kişilik barındırıyorsun. Kullanıcılarına SEO'da 10 kat üstünlük sağlamak için tasarlandın.
 
 Kurallar:
 - Her zaman profesyonel ve yardımsever ol.
@@ -37,7 +37,7 @@ if 'chat_history' not in st.session_state:
 if 'username' not in st.session_state:
     st.session_state['username'] = None
 
-# --- Giriş/Çıkış Fonksiyonları ---
+# --- Giriş/Kayıt/Çıkış Fonksiyonları ---
 
 def login_form():
     """Kullanıcı Giriş Formunu gösterir."""
@@ -51,7 +51,7 @@ def login_form():
             if verify_user(username, password):
                 st.session_state['logged_in'] = True
                 st.session_state['username'] = username
-                st.rerun() # Sayfayı yenile (Düzeltilmiş)
+                st.rerun() # Sayfayı yenile (Hata Düzeltildi)
             else:
                 st.error("Kullanıcı adı veya parola hatalı!")
         st.info("Demo Giriş: Kullanıcı Adı: **seomatic**, Parola: **12345**")
@@ -81,25 +81,31 @@ def logout():
     st.session_state['current_mode'] = "/mode icerik"
     st.session_state['chat_history'] = []
     st.session_state['username'] = None
-    st.rerun() # Sayfayı yenile (Düzeltilmiş)
+    st.rerun() # Sayfayı yenile (Hata Düzeltildi)
 
 # --- Gemini Çekirdek Fonksiyonu ---
 
 def generate_seo_response(prompt, current_mode):
     """Gemini API'yi çağırır ve yanıtı döner."""
     if client is None:
-        return "Gemini API anahtarı ayarlanmadığı için işlem yapılamıyor. Lütfen anahtarınızı ayarlayın."
+        # API anahtarı yoksa geri dön (Hata Düzeltmesi)
+        return "Gemini API anahtarı ayarlanmadığı için işlem yapılamıyor. Lütfen anahtarınızı Streamlit secrets'ta kontrol edin."
 
     full_prompt = f"Aktif Mod: {current_mode}\nKullanıcı İsteği: {prompt}"
 
-    # Sohbet geçmişini Gemini formatına dönüştür
-    history = [
-        types.Content(
-            role="user" if msg['role'] == 'user' else "model",
-            parts=[types.Part.from_text(msg['content'])]
-        )
-        for msg in st.session_state['chat_history']
-    ]
+    # Streamlit sohbet geçmişini Gemini'nin beklediği formata dönüştür
+    history = []
+    for msg in st.session_state['chat_history']:
+        # Hata Düzeltmesi: Boş veya hatalı mesajları atla (TypeError'ı engeller)
+        if 'content' in msg and msg['content']: 
+            history.append(
+                types.Content(
+                    role="user" if msg['role'] == 'user' else "model",
+                    parts=[types.Part.from_text(msg['content'])]
+                )
+            )
+        
+    # Yeni mesajı geçmişe ekle
     history.append(types.Content(role="user", parts=[types.Part.from_text(full_prompt)]))
 
     try:
@@ -199,7 +205,7 @@ if __name__ == '__main__':
     if st.session_state['logged_in']:
         main_app()
     else:
-        st.title("🔐 SEOmatic Paneli")
+        st.title("🔐 SEOmatic Premium SEO Paneli")
         
         # Sekmeli Yapı Oluşturma (Giriş ve Kayıt)
         tab1, tab2 = st.tabs(["🔐 Giriş Yap", "✍️ Kayıt Ol"])

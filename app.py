@@ -51,7 +51,7 @@ def login_form():
             if verify_user(username, password):
                 st.session_state['logged_in'] = True
                 st.session_state['username'] = username
-                st.rerun() # Sayfayı yenile (Hata Düzeltildi)
+                st.rerun() # Sayfayı yenile (Düzeltildi: st.rerun())
             else:
                 st.error("Kullanıcı adı veya parola hatalı!")
         st.info("Demo Giriş: Kullanıcı Adı: **seomatic**, Parola: **12345**")
@@ -81,7 +81,7 @@ def logout():
     st.session_state['current_mode'] = "/mode icerik"
     st.session_state['chat_history'] = []
     st.session_state['username'] = None
-    st.rerun() # Sayfayı yenile (Hata Düzeltildi)
+    st.rerun() # Sayfayı yenile (Düzeltildi: st.rerun())
 
 # --- Gemini Çekirdek Fonksiyonu ---
 
@@ -97,13 +97,16 @@ def generate_seo_response(prompt, current_mode):
     history = []
     for msg in st.session_state['chat_history']:
         # Hata Düzeltmesi: Boş veya hatalı mesajları atla (TypeError'ı engeller)
-        if 'content' in msg and msg['content']: 
+        if 'role' in msg and 'content' in msg and msg['content']:
             history.append(
                 types.Content(
                     role="user" if msg['role'] == 'user' else "model",
                     parts=[types.Part.from_text(msg['content'])]
                 )
             )
+        else:
+             # Eğer hata varsa atla
+             continue
         
     # Yeni mesajı geçmişe ekle
     history.append(types.Content(role="user", parts=[types.Part.from_text(full_prompt)]))
@@ -171,9 +174,14 @@ def main_app():
         st.code("/reset - Sohbeti sıfırla", language="markdown")
 
     # Ana Sohbet Alanı
+    # Hata Düzeltmesi: Geçmişteki mesajları güvenli şekilde göster
     for message in st.session_state['chat_history']:
-        with st.chat_message(message['role']):
-            st.markdown(message['content'])
+        if 'role' in message and 'content' in message and message['content']:
+            with st.chat_message(message['role']):
+                st.markdown(message['content'])
+        else:
+             # Hatalı/eksik mesajları atla
+             continue
 
     user_prompt = st.chat_input("SEO isteğinizi buraya yazın...")
 

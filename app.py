@@ -51,7 +51,7 @@ def login_form():
             if verify_user(username, password):
                 st.session_state['logged_in'] = True
                 st.session_state['username'] = username
-                st.rerun() # Sayfayı yenile (Düzeltildi: st.rerun())
+                st.rerun() 
             else:
                 st.error("Kullanıcı adı veya parola hatalı!")
         st.info("Demo Giriş: Kullanıcı Adı: **seomatic**, Parola: **12345**")
@@ -68,7 +68,6 @@ def register_form():
             if len(new_username) < 4 or len(new_password) < 6:
                 st.error("Kullanıcı adı en az 4, parola en az 6 karakter olmalıdır.")
             else:
-                # Veritabanına kullanıcı ekle
                 success = add_user(new_username, new_password)
                 if success:
                     st.success("✅ Hesap başarıyla oluşturuldu! Şimdi **Giriş Yap** sekmesini kullanabilirsiniz.")
@@ -81,32 +80,41 @@ def logout():
     st.session_state['current_mode'] = "/mode icerik"
     st.session_state['chat_history'] = []
     st.session_state['username'] = None
-    st.rerun() # Sayfayı yenile (Düzeltildi: st.rerun())
+    st.rerun()
 
 # --- Gemini Çekirdek Fonksiyonu ---
 
 def generate_seo_response(prompt, current_mode):
     """Gemini API'yi çağırır ve yanıtı döner."""
     if client is None:
-        # API anahtarı yoksa geri dön (Hata Düzeltmesi)
-        return "Gemini API anahtarı ayarlanmadığı için işlem yapılamıyor. Lütfen anahtarınızı Streamlit secrets'ta kontrol edin."
+        return "Gemini API anahtarı ayarlanmadığı için işlem yapılamıyor."
 
     full_prompt = f"Aktif Mod: {current_mode}\nKullanıcı İsteği: {prompt}"
 
-    # Streamlit sohbet geçmişini Gemini'nin beklediği formata dönüştür
+    # --- KRİTİK HATA DÜZELTMESİ ---
     history = []
     for msg in st.session_state['chat_history']:
-        # Hata Düzeltmesi: Boş veya hatalı mesajları atla (TypeError'ı engeller)
-        if 'role' in msg and 'content' in msg and msg['content']:
+        try:
+            # 1. İçeriği al
+            content_txt = msg.get('content')
+            
+            # 2. Eğer içerik yoksa atla
+            if not content_txt:
+                continue
+            
+            # 3. İÇERİĞİ ZORLA STRING'E ÇEVİR (TypeError Çözümü)
+            # Bu satır, gelen veri sayı bile olsa metne çevirip hatayı önler.
+            content_txt = str(content_txt)
+
             history.append(
                 types.Content(
                     role="user" if msg['role'] == 'user' else "model",
-                    parts=[types.Part.from_text(msg['content'])]
+                    parts=[types.Part.from_text(content_txt)]
                 )
             )
-        else:
-             # Eğer hata varsa atla
-             continue
+        except Exception:
+            # Herhangi bir hata olursa o mesajı atla ama uygulamayı çökertme
+            continue
         
     # Yeni mesajı geçmişe ekle
     history.append(types.Content(role="user", parts=[types.Part.from_text(full_prompt)]))
@@ -140,7 +148,7 @@ def main_app():
 
     st.markdown("---")
 
-    # Sol Kenar Çubuğu (Mode Seçimi)
+    # Sol Kenar Çubuğu
     with st.sidebar:
         st.header("⚙️ Uzman Modları")
         
@@ -163,25 +171,28 @@ def main_app():
         if new_mode != st.session_state['current_mode']:
             st.session_state['current_mode'] = new_mode
             st.session_state['chat_history'] = [] 
-            st.success(f"✅ Mod **{mode_name}** ({new_mode}) olarak ayarlandı. Yeni sohbete başlayabilirsin.")
+            st.success(f"✅ Mod **{mode_name}** ({new_mode}) olarak ayarlandı.")
+            st.rerun() # Mod değişince sayfayı yenile
         
         if st.session_state['current_mode'] == "/mode lucifer":
-            st.warning("⚠️ **DİKKAT:** Lucifer (Black Hat) modundasınız. Riskli bir moddur.")
+            st.warning("⚠️ **DİKKAT:** Lucifer (Black Hat) modundasınız.")
         
         st.markdown("---")
-        st.header("📢 Komutlar")
-        st.code("/mode [mod_adı] - Mod değiştir", language="markdown")
-        st.code("/reset - Sohbeti sıfırla", language="markdown")
+        
+        # --- ACİL DURUM BUTONU ---
+        # Eğer oturum bozulursa kullanıcı buradan düzeltebilsin diye
+        if st.button("🗑️ SOHBETİ SIFIRLA (Hata Çözümü)"):
+            st.session_state['chat_history'] = []
+            st.success("Sohbet geçmişi temizlendi!")
+            st.rerun()
 
     # Ana Sohbet Alanı
-    # Hata Düzeltmesi: Geçmişteki mesajları güvenli şekilde göster
     for message in st.session_state['chat_history']:
-        if 'role' in message and 'content' in message and message['content']:
+        # Mesajları güvenli göster
+        content = message.get('content')
+        if content:
             with st.chat_message(message['role']):
-                st.markdown(message['content'])
-        else:
-             # Hatalı/eksik mesajları atla
-             continue
+                st.markdown(str(content))
 
     user_prompt = st.chat_input("SEO isteğinizi buraya yazın...")
 
@@ -189,7 +200,6 @@ def main_app():
         
         if user_prompt.lower() == "/reset":
             st.session_state['chat_history'] = []
-            st.info("Sohbet geçmişi sıfırlandı.")
             st.rerun() 
             return
         
@@ -207,19 +217,15 @@ def main_app():
         st.session_state['chat_history'].append({"role": "assistant", "content": response})
 
 
-# --- Uygulama Başlatma ve Giriş/Kayıt Ekranı ---
+# --- Uygulama Başlatma ---
 
 if __name__ == '__main__':
     if st.session_state['logged_in']:
         main_app()
     else:
         st.title("🔐 SEOmatic Premium SEO Paneli")
-        
-        # Sekmeli Yapı Oluşturma (Giriş ve Kayıt)
         tab1, tab2 = st.tabs(["🔐 Giriş Yap", "✍️ Kayıt Ol"])
-
         with tab1:
             login_form()
-
         with tab2:
             register_form()

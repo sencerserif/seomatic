@@ -17,7 +17,7 @@ def init_db():
     conn.close()
 
 def add_user(username, password):
-    """Yeni bir kullanıcı ekler."""
+    """Yeni bir kullanıcı ekler. Kullanıcı adı zaten varsa False döner."""
     conn = sqlite3.connect(DATABASE_NAME)
     c = conn.cursor()
     try:

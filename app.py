@@ -2,17 +2,27 @@ import streamlit as st
 from google import genai
 from google.genai import types
 from database import verify_user, init_db, add_user 
+import os
 
 # --- API Anahtarı ve Model Ayarları ---
 try:
     # Gemini API anahtarını Streamlit secrets'tan okur
-    client = genai.Client(api_key=st.secrets.get("GEMINI_API_KEY")) 
-except Exception:
-    client = None
-    if "GEMINI_API_KEY" not in st.secrets:
+    api_key = st.secrets.get("GEMINI_API_KEY")
+    if not api_key:
+        # Eğer secrets'ta yoksa ortam değişkenine bak (Local/VPS için)
+        api_key = os.getenv("GEMINI_API_KEY")
+    
+    if api_key:
+        client = genai.Client(api_key=api_key)
+    else:
+        client = None
         st.error("⚠️ GEMINI_API_KEY bulunamadı! Lütfen Streamlit secrets'a ekleyin.")
 
-# --- Sistem Talimatları (Core Identity) ---
+except Exception as e:
+    client = None
+    st.error(f"⚠️ İstemci başlatma hatası: {e}")
+
+# --- Sistem Talimatları ---
 SYSTEM_INSTRUCTIONS = """
 SEN SEOMATIC'sin - Google'ın algoritmalarını deşifre eden, rakipleri analiz eden, içerik üreten ve SEO dünyasının tüm kapılarını açan bir AI ajanısın. İçinde 10 farklı uzman kişilik barındırıyorsun. Kullanıcılarına SEO'da 10 kat üstünlük sağlamak için tasarlandın.
 
@@ -82,42 +92,48 @@ def logout():
     st.session_state['username'] = None
     st.rerun()
 
-# --- Gemini Çekirdek Fonksiyonu ---
+# --- Gemini Çekirdek Fonksiyonu (DÜZELTİLDİ) ---
 
 def generate_seo_response(prompt, current_mode):
     """Gemini API'yi çağırır ve yanıtı döner."""
     if client is None:
         return "Gemini API anahtarı ayarlanmadığı için işlem yapılamıyor."
 
-    full_prompt = f"Aktif Mod: {current_mode}\nKullanıcı İsteği: {prompt}"
+    # Prompt'u string olduğundan emin olarak oluştur
+    full_prompt = str(f"Aktif Mod: {current_mode}\nKullanıcı İsteği: {prompt}")
 
-    # --- KRİTİK HATA DÜZELTMESİ ---
     history = []
+    
+    # Geçmiş mesajları işle
     for msg in st.session_state['chat_history']:
         try:
-            # 1. İçeriği al
             content_txt = msg.get('content')
-            
-            # 2. Eğer içerik yoksa atla
             if not content_txt:
                 continue
             
-            # 3. İÇERİĞİ ZORLA STRING'E ÇEVİR (TypeError Çözümü)
-            # Bu satır, gelen veri sayı bile olsa metne çevirip hatayı önler.
-            content_txt = str(content_txt)
+            # İçeriği zorla string yap
+            safe_content = str(content_txt)
 
+            # types.Part.from_text kullanırken 'text=' parametresini açıkça belirt
             history.append(
                 types.Content(
                     role="user" if msg['role'] == 'user' else "model",
-                    parts=[types.Part.from_text(content_txt)]
+                    parts=[types.Part.from_text(text=safe_content)]
                 )
             )
         except Exception:
-            # Herhangi bir hata olursa o mesajı atla ama uygulamayı çökertme
             continue
         
-    # Yeni mesajı geçmişe ekle
-    history.append(types.Content(role="user", parts=[types.Part.from_text(full_prompt)]))
+    # Yeni mesajı ekle (BURASI HATAYI ÇÖZEN KISIM)
+    try:
+        history.append(
+            types.Content(
+                role="user", 
+                parts=[types.Part.from_text(text=full_prompt)] # 'text=' eklendi
+            )
+        )
+    except Exception as e:
+        return f"Mesaj oluşturma hatası: {e}"
 
     try:
         response = client.models.generate_content(
@@ -138,7 +154,6 @@ def generate_seo_response(prompt, current_mode):
 def main_app():
     """Ana SEO Panelini gösterir."""
 
-    # Üst Bilgi (Header)
     col1, col2 = st.columns([6, 1])
     with col1:
         st.title("🎯 SEOmatic - Premium SEO Agent")
@@ -148,7 +163,6 @@ def main_app():
 
     st.markdown("---")
 
-    # Sol Kenar Çubuğu
     with st.sidebar:
         st.header("⚙️ Uzman Modları")
         
@@ -172,23 +186,20 @@ def main_app():
             st.session_state['current_mode'] = new_mode
             st.session_state['chat_history'] = [] 
             st.success(f"✅ Mod **{mode_name}** ({new_mode}) olarak ayarlandı.")
-            st.rerun() # Mod değişince sayfayı yenile
+            st.rerun()
         
         if st.session_state['current_mode'] == "/mode lucifer":
             st.warning("⚠️ **DİKKAT:** Lucifer (Black Hat) modundasınız.")
         
         st.markdown("---")
         
-        # --- ACİL DURUM BUTONU ---
-        # Eğer oturum bozulursa kullanıcı buradan düzeltebilsin diye
         if st.button("🗑️ SOHBETİ SIFIRLA (Hata Çözümü)"):
             st.session_state['chat_history'] = []
             st.success("Sohbet geçmişi temizlendi!")
             st.rerun()
 
-    # Ana Sohbet Alanı
+    # Sohbet Geçmişini Göster
     for message in st.session_state['chat_history']:
-        # Mesajları güvenli göster
         content = message.get('content')
         if content:
             with st.chat_message(message['role']):
@@ -197,7 +208,6 @@ def main_app():
     user_prompt = st.chat_input("SEO isteğinizi buraya yazın...")
 
     if user_prompt:
-        
         if user_prompt.lower() == "/reset":
             st.session_state['chat_history'] = []
             st.rerun() 
